@@ -1,0 +1,93 @@
+# Visual Studio / .NET
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.pidb
+*.userprefs
+*.csproj.user
+*.dbmdl
+*.psess
+*.vsp
+*.vspscc
+*.sln.ide
+
+# Build Folders
+[Bb]in/
+[Oo]bj/
+*/bin/
+*/obj/
+Debug/
+Release/
+build/
+Build/
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Test Results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Rider/IDE
+.idea/
+*.sln.iml
+
+# Resharper
+_ReSharper*/
+*.DotSettings.user
+*.DotSettings
+
+# Visual Studio Code workspace files
+.vscode/
+.history/
+
+# Logs, temp files
+*.log
+*.vsix
+*.cache
+*.tmp
+*.temp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Others
+node_modules/
+*.class
+*.apk
+*.jar
+
+# Ignore package directories created by package managers
+packages/*
+
+# Coverage
+coverage/
+
+# Prevent committing secrets or local machine certs
+secrets.json
+*.pfx
+
+# MSBuild generated files
+*.ilk
+*.meta
+*.obj
+*.pch
+*.pdb
+*.mdb
+
+# Visual Studio publish directory
+publish/
+
+# SQL Server files
+*.mdf
+*.ldf
